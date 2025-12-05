@@ -28,27 +28,29 @@ opam install -y hardcaml hardcaml_waveterm ppx_hardcaml hardcaml_verify
 # Build all solutions
 opam exec --switch=advent-fpga -- dune build
 
-# Run all tests (verifies hardware matches software reference)
+# Run all tests (simulation + verification)
 opam exec --switch=advent-fpga -- dune runtest
 
-# Run a specific day
-opam exec --switch=advent-fpga -- dune exec hardcaml/day01/solution.exe -- common/test_vectors/day01.txt
+# Run a specific day's simulation
+opam exec --switch=advent-fpga -- dune exec hardcaml/day01/simulate.exe -- common/test_vectors/day01.txt
+
+# Run a specific day's verification
+opam exec --switch=advent-fpga -- dune exec hardcaml/day01/verify.exe
 ```
 
 ## Project Structure
 
 ```
 advent-of-fpga-2025/
-├── dune-project          # Dune build config
-├── dune                   # Top-level test targets
 ├── hardcaml/
 │   └── day01/
-│       ├── dune          # Day-specific build config
-│       └── solution.ml   # Hardware implementation + simulation
-├── common/
-│   └── test_vectors/     # Puzzle inputs
-└── docs/
-    └── TECHNICAL_NOTES.md
+│       ├── solution.ml   # Hardware implementation (synthesizable RTL)
+│       ├── spec.ml       # Software specification (plain OCaml)
+│       ├── simulate.ml   # Runs hardware against test vectors
+│       ├── verify.ml     # Proves hardware matches spec
+│       └── BUGS.md       # Known issues from verification
+└── common/
+    └── test_vectors/     # Puzzle inputs
 ```
 
 ## Solutions

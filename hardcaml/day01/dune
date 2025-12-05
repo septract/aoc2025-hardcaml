@@ -1,4 +1,18 @@
-(executable
- (name solution)
+; Day01 library: hardware implementation + software specification
+(library
+ (name day01)
+ (modules solution spec)
  (libraries hardcaml)
  (preprocess (pps ppx_hardcaml)))
+
+; Simulation executable - runs hardware against test vectors
+(executable
+ (name simulate)
+ (modules simulate)
+ (libraries day01 hardcaml))
+
+; Verification executable - proves hardware matches spec
+(executable
+ (name verify)
+ (modules verify)
+ (libraries day01 hardcaml))

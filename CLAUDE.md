@@ -13,14 +13,17 @@ Advent of Code 2025 solutions implemented as synthesizable hardware designs usin
 # Build all solutions
 opam exec --switch=advent-fpga -- dune build
 
-# Run all tests
+# Run all tests (simulation + verification)
 opam exec --switch=advent-fpga -- dune runtest
 
-# Run specific day
-opam exec --switch=advent-fpga -- dune exec hardcaml/day01/solution.exe -- common/test_vectors/day01.txt
+# Run specific day simulation
+opam exec --switch=advent-fpga -- dune exec hardcaml/day01/simulate.exe -- common/test_vectors/day01.txt
+
+# Run specific day verification
+opam exec --switch=advent-fpga -- dune exec hardcaml/day01/verify.exe
 ```
 
-## Project Structure & Conventions
+## Project Structure
 
 ```
 advent-of-fpga-2025/
@@ -28,74 +31,49 @@ advent-of-fpga-2025/
 ├── dune                      # Test runner rules
 ├── hardcaml/
 │   └── dayNN/
-│       ├── dune              # (executable (name solution) ...)
-│       └── solution.ml       # Hardware implementation + testbench
+│       ├── dune              # Build config
+│       ├── solution.ml       # Hardware implementation (synthesizable RTL)
+│       ├── spec.ml           # Software specification (plain OCaml)
+│       ├── simulate.ml       # Runs hardware simulation against test vectors
+│       ├── verify.ml         # Proves hardware matches spec
+│       └── BUGS.md           # Known issues found by verification
 └── common/
     └── test_vectors/
         └── dayNN.txt         # Puzzle input
 ```
 
-**Naming conventions:**
-- Each day's solution lives in `hardcaml/dayNN/solution.ml`
-- Test vectors go in `common/test_vectors/dayNN.txt`
-- The executable is always named `solution` in dune
+## File Roles
 
-## Design Requirements
+### solution.ml — Hardware Implementation
+- Contains the synthesizable RTL design
+- Pure Hardcaml signals and combinational/sequential logic
+- No simulation code, no I/O, no side effects
+- **This is what gets synthesized to real hardware**
 
-- **ALL computation must be in hardware** — the goal is synthesizable RTL, not software simulation
-- Software reference implementations are OK for verification, but the actual solution must be hardware
-- Hardcaml lacks division/modulo primitives — implement using:
-  - **Multiplication by reciprocal**: `x / D ≈ (x * M) >> S` where M and S are chosen for accuracy
-  - Lookup tables for small domains
-  - Iterative subtraction for variable divisors
-  - Bit manipulation for powers of 2
+### spec.ml — Software Specification
+- Defines correct behavior in **plain, readable OCaml**
+- No Hardcaml dependencies - just standard OCaml
+- Single source of truth for "what is correct"
+- Both simulate.ml and verify.ml import this
 
-## Hardcaml Patterns
+### simulate.ml — Simulation Runner
+- Runs hardware simulation using Cyclesim
+- Compares hardware output against spec.ml
+- Handles file I/O and test vector parsing
+- Entry point: `dune exec hardcaml/dayNN/simulate.exe`
 
-**Register with custom reset value:**
-```ocaml
-(* Don't use ~clear in Reg_spec if you need non-zero reset *)
-let spec = Reg_spec.create ~clock:i.clock () in
-let reg = reg_fb ~width:8 ~f:(fun r ->
-  mux2 i.clear (of_int ~width:8 50)  (* reset to 50, not 0 *)
-    (mux2 i.valid new_value r)
-) spec
-```
+### verify.ml — Formal Verification
+- Exhaustively tests hardware against spec
+- Reports any discrepancies between hw and sw
+- Can use SAT-based verification for larger spaces
+- Entry point: `dune exec hardcaml/dayNN/verify.exe`
 
-**Division by constant (e.g., 100):**
-```ocaml
-(* x / 100 ≈ (x * 1311) >> 17, accurate for x < 5000 *)
-let div_by_100 x =
-  let x_wide = uresize x 32 in
-  srl (x_wide *: of_int ~width:32 1311) 17
+## Design Principles
 
-let mod_100 x =
-  let q = div_by_100 x in
-  x -: (q *: of_int ~width:32 100)
-```
-
-**Interface modules:**
-```ocaml
-module I = struct
-  type 'a t = { clock : 'a; data : 'a [@bits 8] } [@@deriving hardcaml]
-end
-```
-
-## Formal Verification
-
-Use **hardcaml_verify** for SAT-based equivalence checking and bounded model checking:
-```ocaml
-open Hardcaml_verify
-(* Prove two implementations are equivalent *)
-Sat.prove_equivalence impl1 impl2
-```
-
-## Verilog Export
-
-```ocaml
-let circuit = Circuit.create_exn ~name:"day01" [output]
-Rtl.print Verilog.output circuit
-```
+1. **Spec first** — Write spec.ml before solution.ml. Define what "correct" means in plain OCaml.
+2. **All computation in hardware** — The goal is synthesizable RTL, not software running on an FPGA.
+3. **Verify exhaustively** — Use verify.ml to prove hardware matches spec across all inputs.
+4. **Document bugs** — When verification finds discrepancies, document them in BUGS.md.
 
 ## Project Scope
 
