@@ -13,71 +13,72 @@ Advent of Code 2025 solutions implemented as synthesizable hardware designs usin
 # Build all solutions
 opam exec --switch=advent-fpga -- dune build
 
-# Run all tests (simulation + verification)
-opam exec --switch=advent-fpga -- dune runtest
-
-# Run specific day simulation
+# Run simulation and exhaustive testing
 opam exec --switch=advent-fpga -- dune exec hardcaml/day01/simulate.exe -- common/test_vectors/day01.txt
 
-# Run specific day verification
+# Run SAT-based formal verification
 opam exec --switch=advent-fpga -- dune exec hardcaml/day01/verify.exe
 ```
 
 ## Project Structure
 
 ```
-advent-of-fpga-2025/
-├── dune-project              # Root dune config
-├── dune                      # Test runner rules
-├── hardcaml/
-│   └── dayNN/
-│       ├── dune              # Build config
-│       ├── solution.ml       # Hardware implementation (synthesizable RTL)
-│       ├── spec.ml           # Software specification (plain OCaml)
-│       ├── simulate.ml       # Runs hardware simulation against test vectors
-│       ├── verify.ml         # Proves hardware matches spec
-│       └── BUGS.md           # Known issues found by verification
-└── common/
-    └── test_vectors/
-        └── dayNN.txt         # Puzzle input
+hardcaml/dayNN/
+├── solution.ml   # Hardware implementation (synthesizable RTL)
+├── spec.ml       # Software specification (plain OCaml)
+├── simulate.ml   # Simulation + exhaustive TESTING
+├── verify.ml     # SAT-based formal PROOFS
+└── BUGS.md       # Issues found by testing/verification
 ```
 
-## File Roles
+## File Roles — READ THIS CAREFULLY
 
 ### solution.ml — Hardware Implementation
-- Contains the synthesizable RTL design
-- Pure Hardcaml signals and combinational/sequential logic
-- No simulation code, no I/O, no side effects
+- Pure synthesizable RTL using Hardcaml
+- No simulation, no I/O, no side effects
 - **This is what gets synthesized to real hardware**
 
 ### spec.ml — Software Specification
-- Defines correct behavior in **plain, readable OCaml**
-- No Hardcaml dependencies - just standard OCaml
-- Single source of truth for "what is correct"
-- Both simulate.ml and verify.ml import this
+- Plain OCaml defining correct behavior
+- No Hardcaml — just standard OCaml int/bool operations
+- **Single source of truth for "what is correct"**
 
-### simulate.ml — Simulation Runner
+### simulate.ml — Simulation and Testing (ENUMERATION)
+**THIS IS TESTING, NOT VERIFICATION**
 - Runs hardware simulation using Cyclesim
-- Compares hardware output against spec.ml
-- Handles file I/O and test vector parsing
-- Entry point: `dune exec hardcaml/dayNN/simulate.exe`
+- Tests specific inputs from test vectors
+- Exhaustive testing by looping through input space
+- Compares hw output to spec output
+- **Finds bugs by trying inputs one at a time**
 
-### verify.ml — Formal Verification
-- Exhaustively tests hardware against spec
-- Reports any discrepancies between hw and sw
-- Can use SAT-based verification for larger spaces
-- Entry point: `dune exec hardcaml/dayNN/verify.exe`
+### verify.ml — Formal Verification (SAT SOLVING)
+**THIS IS PROOF, NOT TESTING**
+- Uses SAT/SMT solvers via hardcaml_verify
+- Proves properties hold for ALL inputs simultaneously
+- Equivalence checking: prove hw circuit == spec circuit
+- Property checking: prove invariants (e.g., pos < 100)
+- **Proves correctness without enumeration**
+
+## Key Distinction
+
+| | simulate.ml | verify.ml |
+|---|---|---|
+| Method | Loop through inputs | SAT solving |
+| Proves | Nothing (just tests) | Mathematical proof |
+| Scales | O(n) in input space | Handles large spaces |
+| Finds | Bugs that occur in tested inputs | All possible bugs |
 
 ## Design Principles
 
-1. **Spec first** — Write spec.ml before solution.ml. Define what "correct" means in plain OCaml.
-2. **All computation in hardware** — The goal is synthesizable RTL, not software running on an FPGA.
-3. **Verify exhaustively** — Use verify.ml to prove hardware matches spec across all inputs.
-4. **Document bugs** — When verification finds discrepancies, document them in BUGS.md.
+1. **Spec first** — Write spec.ml before solution.ml
+2. **All computation in hardware** — Goal is synthesizable RTL
+3. **Test exhaustively** — simulate.ml tests all reachable inputs
+4. **Prove formally** — verify.ml proves properties via SAT
+5. **Document bugs** — Track issues in BUGS.md
 
 ## Project Scope
 
-R&D project exploring AI-assisted hardware design using AoC puzzles. **Not for contest submission.**
+R&D project exploring AI-assisted hardware design. **Not for contest submission.**
 
 ## References
 

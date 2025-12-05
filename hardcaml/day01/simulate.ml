@@ -1,9 +1,54 @@
-(* Day 01: Simulation runner for hardware implementation *)
+(* Day 01: Simulation and Exhaustive Testing
+
+   This file:
+   - Runs hardware simulation against test vectors
+   - Compares results to software spec
+   - Performs exhaustive testing across input space
+
+   This is NOT formal verification - it's testing by enumeration.
+   For SAT-based formal proofs, see verify.ml.
+*)
 
 open Hardcaml
 open Day01.Solution
 
-(* Parse instruction like "L50" or "R123" *)
+(* ============================================================
+   Hardware Simulation
+   ============================================================ *)
+
+module Sim = Cyclesim.With_interface(Dial.I)(Dial.O)
+
+let create_sim () = Sim.create Dial.create
+
+let reset_sim sim =
+  let (i : Bits.t ref Dial.I.t) = Cyclesim.inputs sim in
+  i.clear := Bits.of_int ~width:1 1;
+  i.valid := Bits.of_int ~width:1 0;
+  i.dir := Bits.of_int ~width:1 0;
+  i.dist := Bits.of_int ~width:Dial.dist_width 0;
+  Cyclesim.cycle sim;
+  i.clear := Bits.of_int ~width:1 0;
+  Cyclesim.cycle sim
+
+let run_instruction sim ~dir ~dist =
+  let (i : Bits.t ref Dial.I.t) = Cyclesim.inputs sim in
+  i.valid := Bits.of_int ~width:1 1;
+  i.dir := Bits.of_int ~width:1 dir;
+  i.dist := Bits.of_int ~width:Dial.dist_width dist;
+  Cyclesim.cycle sim;
+  i.valid := Bits.of_int ~width:1 0
+
+let read_outputs sim =
+  let (o : Bits.t ref Dial.O.t) = Cyclesim.outputs sim in
+  let pos = Bits.to_int !(o.position) in
+  let part1 = Bits.to_int !(o.part1_count) in
+  let part2 = Bits.to_int !(o.part2_count) in
+  (pos, part1, part2)
+
+(* ============================================================
+   Test Vector Simulation
+   ============================================================ *)
+
 let parse_instruction line =
   let line = String.trim line in
   if String.length line < 2 then None
@@ -16,7 +61,6 @@ let parse_instruction line =
       Some (dir, dist)
     with _ -> None
 
-(* Read all instructions from file *)
 let read_instructions filename =
   let ic = open_in filename in
   let rec read_lines acc =
@@ -31,69 +75,178 @@ let read_instructions filename =
   in
   read_lines []
 
-(* Hardware simulation using Hardcaml's simulation framework *)
-module Sim = Cyclesim.With_interface(Dial.I)(Dial.O)
+let simulate_test_vector filename =
+  Printf.printf "Test Vector Simulation\n";
+  Printf.printf "----------------------\n";
+  Printf.printf "Reading: %s\n" filename;
 
-let simulate_hardware instructions =
-  let sim = Sim.create Dial.create in
-  let inputs = Cyclesim.inputs sim in
-  let outputs = Cyclesim.outputs sim in
+  let instructions = read_instructions filename in
+  Printf.printf "Loaded %d instructions\n\n" (List.length instructions);
 
-  (* Helper to set inputs *)
-  let set_inputs ~clear ~valid ~dir ~dist =
-    inputs.clear := Bits.of_int ~width:1 (if clear then 1 else 0);
-    inputs.valid := Bits.of_int ~width:1 (if valid then 1 else 0);
-    inputs.dir := Bits.of_int ~width:1 dir;
-    inputs.dist := Bits.of_int ~width:Dial.dist_width dist
-  in
+  (* Software reference *)
+  let (sw_part1, sw_part2) = Day01.Spec.solve instructions in
+  Printf.printf "Software (spec.ml):\n";
+  Printf.printf "  Part 1: %d\n" sw_part1;
+  Printf.printf "  Part 2: %d\n\n" sw_part2;
 
-  (* Reset *)
-  set_inputs ~clear:true ~valid:false ~dir:0 ~dist:0;
-  Cyclesim.cycle sim;
-  Cyclesim.cycle sim;
+  (* Hardware simulation *)
+  let sim = create_sim () in
+  reset_sim sim;
 
-  set_inputs ~clear:false ~valid:false ~dir:0 ~dist:0;
-  Cyclesim.cycle sim;
-
-  (* Process instructions *)
   List.iter (fun (dir, dist) ->
-    set_inputs ~clear:false ~valid:true ~dir ~dist;
-    Cyclesim.cycle sim;
+    run_instruction sim ~dir ~dist
   ) instructions;
 
-  set_inputs ~clear:false ~valid:false ~dir:0 ~dist:0;
-  Cyclesim.cycle sim;
+  let (hw_pos, hw_part1, hw_part2) = read_outputs sim in
+  Printf.printf "Hardware (solution.ml):\n";
+  Printf.printf "  Part 1: %d\n" hw_part1;
+  Printf.printf "  Part 2: %d\n" hw_part2;
+  Printf.printf "  Final position: %d\n\n" hw_pos;
 
-  let part1 = Bits.to_int !(outputs.part1_count) in
-  let part2 = Bits.to_int !(outputs.part2_count) in
-  let final_pos = Bits.to_int !(outputs.position) in
-  (part1, part2, final_pos)
+  if sw_part1 = hw_part1 && sw_part2 = hw_part2 then begin
+    Printf.printf "  ✓ Hardware matches software!\n";
+    true
+  end else begin
+    Printf.printf "  ✗ MISMATCH detected.\n";
+    false
+  end
+
+(* ============================================================
+   Exhaustive Testing (NOT formal verification)
+   ============================================================ *)
+
+let test_single_instruction ~pos:_ ~dir ~dist =
+  let sim = create_sim () in
+  reset_sim sim;
+  run_instruction sim ~dir ~dist;
+  Cyclesim.cycle sim;
+  read_outputs sim
+
+let test_exhaustive_from_pos50 () =
+  Printf.printf "\nExhaustive Testing (from pos=50)\n";
+  Printf.printf "--------------------------------\n";
+  Printf.printf "Testing all 8192 combinations: dir ∈ {0,1}, dist ∈ [0,4095]\n";
+
+  let errors = ref 0 in
+  let initial_pos = 50 in
+
+  for dir = 0 to 1 do
+    for dist = 0 to 4095 do
+      let (hw_pos, hw_part1, hw_part2) = test_single_instruction ~pos:initial_pos ~dir ~dist in
+      let sw_pos = Day01.Spec.new_position ~pos:initial_pos ~dir ~dist in
+      let sw_zeros = Day01.Spec.zeros ~pos:initial_pos ~dir ~dist in
+      let sw_ended = if Day01.Spec.ended_at_zero ~pos:initial_pos ~dir ~dist then 1 else 0 in
+
+      if hw_pos <> sw_pos || hw_part1 <> sw_ended || hw_part2 <> sw_zeros then begin
+        incr errors;
+        if !errors <= 5 then
+          Printf.printf "  ERROR: dir=%d dist=%d: hw=(%d,%d,%d) sw=(%d,%d,%d)\n"
+            dir dist hw_pos hw_part1 hw_part2 sw_pos sw_ended sw_zeros
+      end
+    done
+  done;
+
+  if !errors = 0 then begin
+    Printf.printf "  ✓ All 8192 tests passed!\n";
+    true
+  end else begin
+    Printf.printf "  ✗ %d errors found\n" !errors;
+    false
+  end
+
+let test_sequence () =
+  Printf.printf "\nSequence Testing\n";
+  Printf.printf "----------------\n";
+
+  let sim = create_sim () in
+  reset_sim sim;
+
+  let test_cases = [
+    (1, 50);   (* R50: 50 + 50 = 100 -> pos=0 *)
+    (0, 25);   (* L25: 0 -> 75 *)
+    (1, 125);  (* R125: 75 -> 0, crosses twice *)
+    (1, 99);   (* R99: 0 -> 99 *)
+    (0, 100);  (* L100: 99 -> 99, crosses once *)
+  ] in
+
+  let sw_pos = ref 50 in
+  let sw_part1 = ref 0 in
+  let sw_part2 = ref 0 in
+  let errors = ref 0 in
+
+  List.iter (fun (dir, dist) ->
+    sw_part2 := !sw_part2 + Day01.Spec.zeros ~pos:!sw_pos ~dir ~dist;
+    let new_pos = Day01.Spec.new_position ~pos:!sw_pos ~dir ~dist in
+    if new_pos = 0 then incr sw_part1;
+    sw_pos := new_pos;
+
+    run_instruction sim ~dir ~dist;
+    let (hw_pos, hw_part1, hw_part2) = read_outputs sim in
+
+    if hw_pos <> !sw_pos || hw_part1 <> !sw_part1 || hw_part2 <> !sw_part2 then begin
+      incr errors;
+      Printf.printf "  ERROR after %s%d: hw=(%d,%d,%d) sw=(%d,%d,%d)\n"
+        (if dir = 1 then "R" else "L") dist
+        hw_pos hw_part1 hw_part2 !sw_pos !sw_part1 !sw_part2
+    end else
+      Printf.printf "  ✓ %s%d: pos=%d part1=%d part2=%d\n"
+        (if dir = 1 then "R" else "L") dist hw_pos hw_part1 hw_part2
+  ) test_cases;
+
+  if !errors = 0 then begin
+    Printf.printf "  ✓ Sequence test passed!\n";
+    true
+  end else begin
+    Printf.printf "  ✗ %d errors\n" !errors;
+    false
+  end
+
+let test_position_range () =
+  Printf.printf "\nPosition Range Testing\n";
+  Printf.printf "----------------------\n";
+
+  let errors = ref 0 in
+  for dir = 0 to 1 do
+    for dist = 0 to 4095 do
+      let (hw_pos, _, _) = test_single_instruction ~pos:50 ~dir ~dist in
+      if hw_pos < 0 || hw_pos >= 100 then begin
+        incr errors;
+        if !errors <= 5 then
+          Printf.printf "  ERROR: dir=%d dist=%d -> invalid pos=%d\n" dir dist hw_pos
+      end
+    done
+  done;
+
+  if !errors = 0 then begin
+    Printf.printf "  ✓ Position always in [0,99]\n";
+    true
+  end else begin
+    Printf.printf "  ✗ %d range errors\n" !errors;
+    false
+  end
+
+(* ============================================================
+   Main
+   ============================================================ *)
 
 let () =
+  Printf.printf "Day 01: Simulation and Exhaustive Testing\n";
+  Printf.printf "==========================================\n\n";
+
   let filename =
     if Array.length Sys.argv > 1 then Sys.argv.(1)
     else "../../common/test_vectors/day01.txt"
   in
 
-  Printf.printf "Day 01: Safe Dial (Hardware Implementation)\n";
-  Printf.printf "============================================\n\n";
+  let results = [
+    simulate_test_vector filename;
+    test_sequence ();
+    test_position_range ();
+    test_exhaustive_from_pos50 ();
+  ] in
 
-  Printf.printf "Reading: %s\n" filename;
-  let instructions = read_instructions filename in
-  Printf.printf "Loaded %d instructions\n\n" (List.length instructions);
-
-  Printf.printf "Software Reference (from spec.ml):\n";
-  let (sw_part1, sw_part2) = Day01.Spec.solve instructions in
-  Printf.printf "  Part 1: %d\n" sw_part1;
-  Printf.printf "  Part 2: %d\n\n" sw_part2;
-
-  Printf.printf "Hardware Simulation:\n";
-  let (hw_part1, hw_part2, hw_pos) = simulate_hardware instructions in
-  Printf.printf "  Part 1: %d\n" hw_part1;
-  Printf.printf "  Part 2: %d\n" hw_part2;
-  Printf.printf "  Final position: %d\n\n" hw_pos;
-
-  if sw_part1 = hw_part1 && sw_part2 = hw_part2 then
-    Printf.printf "✓ Hardware matches software!\n"
+  Printf.printf "\n==========================================\n";
+  if List.for_all Fun.id results then
+    Printf.printf "✓ All tests passed!\n"
   else
-    Printf.printf "✗ MISMATCH detected.\n"
+    Printf.printf "✗ Some tests failed.\n"
