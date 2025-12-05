@@ -1,48 +1,53 @@
 # Day 01 Bug Report
 
-## BUG-001: 12-bit overflow in count_zeros_left
+## BUG-001: 12-bit overflow in arithmetic operations
 
 **Found by**: Formal verification (verify.ml)
 
-**Severity**: Medium (doesn't affect puzzle input, but incorrect for edge cases)
+**Severity**: Medium (didn't affect puzzle input, but incorrect for edge cases)
+
+**Status**: Fixed
 
 ### Description
 
-In `count_zeros_left`, the intermediate calculation `diff = dist - pos + 100` overflows 12 bits for large `dist` values.
+Multiple arithmetic operations overflowed 12 bits for large `dist` values near the maximum (4095).
+
+### Affected Functions
+
+1. **count_zeros_left**: `diff = dist - pos + 100` overflowed
+2. **count_zeros_right**: `sum = pos + dist` overflowed
+3. **calc_new_position**: `right_sum = pos + dist` overflowed
 
 ### Reproduction
 
 ```
+pos = 50, dir = 1 (RIGHT), dist = 4046
+Expected position: (50 + 4046) mod 100 = 96
+Actual position: 0  (because 4096 mod 4096 = 0 in 12 bits)
+
 pos = 50, dir = 0 (LEFT), dist = 4046
 Expected zeros: (4046 - 50 + 100) / 100 = 40
-Actual zeros: 0
+Actual zeros: 0  (because 4096 mod 4096 = 0 in 12 bits)
 ```
 
 ### Root Cause
 
-```ocaml
-let diff = dist -: pos_ext +: hundred in  (* all 12-bit values *)
-```
-
-When `dist - pos + 100 > 4095`, the result wraps around. For example:
-- `4046 - 50 + 100 = 4096`
-- In 12 bits: `4096 mod 4096 = 0`
-
-### Affected Range
-
-Overflow occurs when `dist > pos + 3995`. For:
-- pos=0: dist > 3995
-- pos=50: dist > 4045
-- pos=99: dist > 4094
+All intermediate sums used 12-bit arithmetic, which overflows at 4096:
+- `pos + dist` max = 99 + 4095 = 4194 > 4095
+- `dist - pos + 100` max = 4095 - 0 + 100 = 4195 > 4095
 
 ### Fix
 
-Widen intermediate calculation to 13+ bits before division:
+Widen all intermediate calculations to 13 bits:
 
 ```ocaml
-let diff = uresize dist 13 -: uresize pos_ext 13 +: of_int ~width:13 100 in
+(* Before *)
+let sum = pos_ext +: dist in
+
+(* After *)
+let sum = uresize pos 13 +: uresize dist 13 in
 ```
 
-### Status
+### Verification
 
-**Not fixed** - puzzle input doesn't trigger this case, produces correct answer (Part 2: 6379).
+After fix, exhaustive verification passes for all 8192 test cases (2 directions × 4096 distances).

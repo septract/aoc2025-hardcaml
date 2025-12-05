@@ -59,7 +59,8 @@ module Dial = struct
     let hundred = of_int ~width:dist_width 100 in
 
     (* Right: (pos + dist) mod 100 *)
-    let right_sum = pos_ext +: dist in
+    (* Use 13 bits to avoid overflow: max value is 99 + 4095 = 4194 *)
+    let right_sum = uresize pos_ext 13 +: uresize dist 13 in
     let right_pos = mod_100 right_sum in
 
     (* Left: (pos + 100 - (dist mod 100)) mod 100 *)
@@ -72,15 +73,14 @@ module Dial = struct
   (* Count zeros for RIGHT rotation: (pos + dist) / 100 *)
   let count_zeros_right ~pos ~dist =
     let open Signal in
-    let pos_ext = uresize pos dist_width in
-    let sum = pos_ext +: dist in
+    (* Use 13 bits to avoid overflow: max value is 99 + 4095 = 4194 *)
+    let sum = uresize pos 13 +: uresize dist 13 in
     uresize (div_by_100 sum) mult_width
 
   (* Count zeros for LEFT rotation *)
   let count_zeros_left ~pos ~dist =
     let open Signal in
     let pos_ext = uresize pos dist_width in
-    let hundred = of_int ~width:dist_width 100 in
     let zero = of_int ~width:mult_width 0 in
 
     let pos_is_zero = pos_ext ==: (of_int ~width:dist_width 0) in
@@ -90,7 +90,8 @@ module Dial = struct
     let zeros_pos_zero = uresize (div_by_100 dist) mult_width in
 
     (* When pos > 0 and dist >= pos: zeros = (dist - pos + 100) / 100 *)
-    let diff = dist -: pos_ext +: hundred in
+    (* Use 13 bits to avoid overflow: max value is 4095 - 0 + 100 = 4195 *)
+    let diff = uresize dist 13 -: uresize pos_ext 13 +: of_int ~width:13 100 in
     let zeros_pos_nonzero = uresize (div_by_100 diff) mult_width in
 
     mux2 pos_is_zero
