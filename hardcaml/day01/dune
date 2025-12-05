@@ -11,8 +11,8 @@
  (modules simulate)
  (libraries day01 hardcaml))
 
-; Verification executable - proves hardware matches spec
+; Verification executable - proves hardware matches spec using SAT
 (executable
  (name verify)
  (modules verify)
- (libraries day01 hardcaml))
+ (libraries day01 hardcaml hardcaml_verify base stdio))
