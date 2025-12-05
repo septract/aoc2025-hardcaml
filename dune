@@ -1,0 +1,8 @@
+; Run all day simulations
+(rule
+ (alias runtest)
+ (deps
+  hardcaml/day01/solution.exe
+  common/test_vectors/day01.txt)
+ (action
+  (run ./hardcaml/day01/solution.exe common/test_vectors/day01.txt)))

@@ -1,0 +1,18 @@
+# OCaml/Dune build artifacts
+_build/
+*.byte
+*.native
+*.install
+.merlin
+
+# opam
+_opam/
+
+# Editor
+*.swp
+*~
+.vscode/
+.idea/
+
+# OS
+.DS_Store
