@@ -15,4 +15,4 @@
 (executable
  (name verify)
  (modules verify)
- (libraries day01 hardcaml hardcaml_verify base stdio))
+ (libraries day01 hardcaml hardcaml_verify base stdio core_unix))

@@ -115,24 +115,35 @@ let simulate_test_vector filename =
    Exhaustive Testing (NOT formal verification)
    ============================================================ *)
 
-let test_single_instruction ~pos:_ ~dir ~dist =
-  let sim = create_sim () in
-  reset_sim sim;
-  run_instruction sim ~dir ~dist;
-  Cyclesim.cycle sim;
-  read_outputs sim
+(* Instantiate combinational logic with Bits for direct testing *)
+module Comb_bits = Dial.Make_comb(Bits)
+
+(* Test combinational logic directly - allows arbitrary starting position *)
+let test_comb_logic ~pos ~dir ~dist =
+  let open Bits in
+  let pos_bits = of_int ~width:Dial.pos_width pos in
+  let dir_bits = of_int ~width:1 dir in
+  let dist_bits = of_int ~width:Dial.dist_width dist in
+  let (new_pos, part1_inc, part2_inc) =
+    Comb_bits.process_instruction ~pos:pos_bits ~dir:dir_bits ~dist:dist_bits
+  in
+  (to_int new_pos, to_int part1_inc, to_int part2_inc)
 
 let test_exhaustive_from_pos50 () =
-  Printf.printf "\nExhaustive Testing (from pos=50)\n";
-  Printf.printf "--------------------------------\n";
+  Printf.printf "\nExhaustive Testing (from pos=50, sequential sim)\n";
+  Printf.printf "-------------------------------------------------\n";
   Printf.printf "Testing all 8192 combinations: dir ∈ {0,1}, dist ∈ [0,4095]\n";
 
+  let sim = create_sim () in
   let errors = ref 0 in
   let initial_pos = 50 in
 
   for dir = 0 to 1 do
     for dist = 0 to 4095 do
-      let (hw_pos, hw_part1, hw_part2) = test_single_instruction ~pos:initial_pos ~dir ~dist in
+      reset_sim sim;
+      run_instruction sim ~dir ~dist;
+      let (hw_pos, hw_part1, hw_part2) = read_outputs sim in
+
       let sw_pos = Day01.Spec.new_position ~pos:initial_pos ~dir ~dist in
       let sw_zeros = Day01.Spec.zeros ~pos:initial_pos ~dir ~dist in
       let sw_ended = if Day01.Spec.ended_at_zero ~pos:initial_pos ~dir ~dist then 1 else 0 in
@@ -151,6 +162,43 @@ let test_exhaustive_from_pos50 () =
     true
   end else begin
     Printf.printf "  ✗ %d errors found\n" !errors;
+    false
+  end
+
+(* Test combinational logic from ALL 100 starting positions *)
+let test_exhaustive_all_positions () =
+  Printf.printf "\nExhaustive Testing (ALL positions, combinational)\n";
+  Printf.printf "-------------------------------------------------\n";
+  Printf.printf "Testing 819,200 combinations: pos ∈ [0,99], dir ∈ {0,1}, dist ∈ [0,4095]\n";
+
+  let errors = ref 0 in
+  let tested = ref 0 in
+
+  for pos = 0 to 99 do
+    for dir = 0 to 1 do
+      for dist = 0 to 4095 do
+        let (hw_pos, hw_ended, hw_zeros) = test_comb_logic ~pos ~dir ~dist in
+
+        let sw_pos = Day01.Spec.new_position ~pos ~dir ~dist in
+        let sw_zeros = Day01.Spec.zeros ~pos ~dir ~dist in
+        let sw_ended = if sw_pos = 0 then 1 else 0 in
+
+        if hw_pos <> sw_pos || hw_ended <> sw_ended || hw_zeros <> sw_zeros then begin
+          incr errors;
+          if !errors <= 5 then
+            Printf.printf "  ERROR: pos=%d dir=%d dist=%d: hw=(%d,%d,%d) sw=(%d,%d,%d)\n"
+              pos dir dist hw_pos hw_ended hw_zeros sw_pos sw_ended sw_zeros
+        end;
+        incr tested
+      done
+    done
+  done;
+
+  if !errors = 0 then begin
+    Printf.printf "  ✓ All %d tests passed!\n" !tested;
+    true
+  end else begin
+    Printf.printf "  ✗ %d errors found in %d tests\n" !errors !tested;
     false
   end
 
@@ -202,23 +250,25 @@ let test_sequence () =
   end
 
 let test_position_range () =
-  Printf.printf "\nPosition Range Testing\n";
-  Printf.printf "----------------------\n";
+  Printf.printf "\nPosition Range Testing (all starting positions)\n";
+  Printf.printf "------------------------------------------------\n";
 
   let errors = ref 0 in
-  for dir = 0 to 1 do
-    for dist = 0 to 4095 do
-      let (hw_pos, _, _) = test_single_instruction ~pos:50 ~dir ~dist in
-      if hw_pos < 0 || hw_pos >= 100 then begin
-        incr errors;
-        if !errors <= 5 then
-          Printf.printf "  ERROR: dir=%d dist=%d -> invalid pos=%d\n" dir dist hw_pos
-      end
+  for pos = 0 to 99 do
+    for dir = 0 to 1 do
+      for dist = 0 to 4095 do
+        let (hw_pos, _, _) = test_comb_logic ~pos ~dir ~dist in
+        if hw_pos < 0 || hw_pos >= 100 then begin
+          incr errors;
+          if !errors <= 5 then
+            Printf.printf "  ERROR: pos=%d dir=%d dist=%d -> invalid pos=%d\n" pos dir dist hw_pos
+        end
+      done
     done
   done;
 
   if !errors = 0 then begin
-    Printf.printf "  ✓ Position always in [0,99]\n";
+    Printf.printf "  ✓ Position always in [0,99] for all 819,200 combinations\n";
     true
   end else begin
     Printf.printf "  ✗ %d range errors\n" !errors;
@@ -243,6 +293,7 @@ let () =
     test_sequence ();
     test_position_range ();
     test_exhaustive_from_pos50 ();
+    test_exhaustive_all_positions ();
   ] in
 
   Printf.printf "\n==========================================\n";
