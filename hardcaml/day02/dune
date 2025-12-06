@@ -1,0 +1,18 @@
+; Day02 library: software specification + hardware implementation
+(library
+ (name day02)
+ (modules spec solution)
+ (libraries hardcaml)
+ (preprocess (pps ppx_hardcaml)))
+
+; Simulation executable - tests software spec and hardware
+(executable
+ (name simulate)
+ (modules simulate)
+ (libraries day02 hardcaml))
+
+; Verification executable - proves hardware correctness using SAT
+(executable
+ (name verify)
+ (modules verify)
+ (libraries hardcaml hardcaml_verify base stdio core_unix))

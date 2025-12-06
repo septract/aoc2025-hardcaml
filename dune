@@ -1,4 +1,4 @@
-; Run all day simulations
+; Day 01 simulation
 (rule
  (alias runtest)
  (deps
@@ -7,7 +7,7 @@
  (action
   (run ./hardcaml/day01/simulate.exe common/test_vectors/day01.txt)))
 
-; Run verification
+; Day 01 verification
 (rule
  (alias runtest)
  (deps
@@ -15,3 +15,18 @@
   common/test_vectors/day01.txt)
  (action
   (run ./hardcaml/day01/verify.exe common/test_vectors/day01.txt)))
+
+; Day 02 simulation
+(rule
+ (alias runtest)
+ (deps
+  hardcaml/day02/simulate.exe
+  common/test_vectors/day02.txt)
+ (action
+  (run ./hardcaml/day02/simulate.exe common/test_vectors/day02.txt)))
+
+; Day 02 verification
+(rule
+ (alias runtest)
+ (deps hardcaml/day02/verify.exe)
+ (action (run ./hardcaml/day02/verify.exe)))
